@@ -1,0 +1,18 @@
+Case ID;Department;User;Activity;System;Cost;Status;Timestamp
+2001;Sales;J.Smit;Order Ontvangen;Salesforce;0.00;Completed;2026-10-01T08:00:00Z
+2001;Finance;System;Kredietcheck;SAP;1.50;Completed;2026-10-01T08:05:00Z
+2001;Management;A.deJong;Order Goedgekeurd;SAP;0.00;Completed;2026-10-01T08:15:00Z
+2001;Finance;System;Factuur Verzonden;SAP;0.50;Completed;2026-10-01T09:00:00Z
+2002;Sales;J.Smit;Order Ontvangen;Salesforce;0.00;Completed;2026-10-01T08:30:00Z
+2002;Finance;System;Kredietcheck;SAP;1.50;Failed;2026-10-01T08:35:00Z
+2002;Finance;System;Kredietcheck Mislukt;SAP;0.00;Warning;2026-10-01T08:40:00Z
+2002;Risk;K.Visser;Handmatige Controle;Celonis;45.00;In_Progress;2026-10-02T10:00:00Z
+2002;Finance;System;Kredietcheck;SAP;1.50;Completed;2026-10-02T10:30:00Z
+2002;Finance;System;Factuur Verzonden;SAP;0.50;Completed;2026-10-02T11:00:00Z
+2003;Sales;L.Bakker;Order Ontvangen;Salesforce;0.00;Completed;2026-10-01T09:00:00Z
+2003;Finance;System;Kredietcheck;SAP;1.50;Completed;2026-10-01T09:05:00Z
+2003;Sales;L.Bakker;Order Geannuleerd;Salesforce;0.00;Terminated;2026-10-01T09:30:00Z
+2004;Sales;M.Klaassen;Order Ontvangen;Salesforce;0.00;Completed;2026-10-03T14:00:00Z
+2004;Finance;System;Kredietcheck;SAP;1.50;Completed;2026-10-03T14:10:00Z
+2004;Management;A.deJong;Order Goedgekeurd;SAP;0.00;Completed;2026-10-03T14:45:00Z
+2004;Finance;System;Factuur Verzonden;SAP;0.50;Completed;2026-10-03T15:30:00Z
