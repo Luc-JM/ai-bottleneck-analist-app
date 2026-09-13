@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="nl" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI-Bottleneck Analist | Lokale Process Mining Engine</title>
+    <meta name="description" content="Lokale browser-gebaseerde CSV process mining engine die event logs lokaal verwerkt tot varianten en doorlooptijden (< 50KB JSON) met GDPR-veilige client-side opslag." />
+    <meta property="og:title" content="AI-Bottleneck Analist" />
+    <meta property="og:description" content="Lokale browser-gebaseerde CSV process mining engine die event logs lokaal verwerkt tot varianten en doorlooptijden (< 50KB JSON) met GDPR-veilige client-side opslag." />
+    <meta property="og:type" content="website" />
+    
+    <!-- Inline theme script to prevent theme flash -->
+    <script>
+      (function() {
+        try {
+          const savedTheme = localStorage.getItem('ai_bottleneck_theme');
+          if (savedTheme === 'light') {
+            document.documentElement.classList.remove('dark');
+          } else {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#eef2ff',
+                500: '#6366f1',
+                600: '#4f46e5',
+                700: '#4338ca',
+              }
+            }
+          }
+        }
+      }
+    </script>
+
+    <!-- Chart.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .dark ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 4px;
+      }
+      .dark ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans min-h-screen antialiased flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200">
+
+    <!-- Top Navigation / Brand Bar -->
+    <header class="border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/60 backdrop-blur-md sticky top-0 z-30 transition-colors">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-base font-bold tracking-tight text-slate-900 dark:text-white">AI-Bottleneck Analist</span>
+              <span class="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Client-Side Engine</span>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Zero-data-leak Process Mining Aggregator voor Celonis CSV's</p>
+          </div>
+        </div>
+
+        <!-- Header Actions: Badges, History, Theme Toggle -->
+        <div class="flex items-center space-x-2.5 text-xs">
+          <!-- GDPR Badge -->
+          <div class="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-slate-600 dark:text-slate-300">
+            <svg class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            <span>GDPR-Safe (0 bytes verzonden)</span>
+          </div>
+
+          <!-- Active Storage Badge -->
+          <div id="storageBadge" class="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-indigo-500/10 border border-indigo-500/30 text-indigo-600 dark:text-indigo-300">
+            <span class="w-2 h-2 rounded-full bg-indigo-500 dark:bg-indigo-400 animate-pulse"></span>
+            <span>Actief: <span id="storageTime"></span></span>
+          </div>
+
+          <!-- History Button -->
+          <button
+            id="historyToggleBtn"
+            class="inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors"
+            title="Bekijk de laatste 5 analyses"
+          >
+            <svg class="w-3.5 h-3.5 mr-1.5 text-indigo-500 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Geschiedenis</span>
+            <span id="historyBadgeCount" class="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">0</span>
+          </button>
+
+          <!-- Dark / Light Mode Toggle Button -->
+          <button
+            id="themeToggleBtn"
+            class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors"
+            title="Wissel Dark/Light Mode"
+            aria-label="Wissel Dark/Light Mode"
+          >
+            <!-- Sun icon (shown in dark mode to switch to light) -->
+            <svg id="themeIconSun" class="w-4 h-4 hidden dark:block text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            <!-- Moon icon (shown in light mode to switch to dark) -->
+            <svg id="themeIconMoon" class="w-4 h-4 block dark:hidden text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+      <!-- Context / Privacy & Architecture Explanation -->
+      <section class="bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:to-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors">
+        <div class="space-y-1">
+          <h1 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            Lokaal CSV inlezen & aggregeren voor AI-analyse
+          </h1>
+          <p class="text-sm text-slate-600 dark:text-slate-400 max-w-3xl leading-relaxed">
+            Grote Celonis event logs worden <strong class="text-slate-900 dark:text-slate-200">100% lokaal in de browser</strong> geparset via de native <code class="text-indigo-600 dark:text-indigo-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs font-mono">FileReader API</code>. De ruwe records verlaten jouw computer nooit, waardoor GDPR-risico's en de Vercel <code class="text-indigo-600 dark:text-indigo-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs font-mono">4.5 MB</code> limiet geëlimineerd worden.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+          <button id="sampleBtn" class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-600/20 active:scale-95">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Laad Celonis Voorbeeld (Order-to-Cash)
+          </button>
+        </div>
+      </section>
+
+      <!-- Error Alert (hidden by default) -->
+      <div id="errorAlert" class="hidden p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 flex items-start justify-between gap-3">
+        <div class="flex items-start gap-3">
+          <svg class="w-5 h-5 text-rose-500 dark:text-rose-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <h4 class="font-semibold text-sm text-rose-800 dark:text-rose-200">Verwerkingsfout</h4>
+            <p id="errorMessage" class="text-xs text-rose-600 dark:text-rose-300/90 mt-0.5 leading-relaxed"></p>
+          </div>
+        </div>
+        <button id="dismissErrorBtn" class="text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-200 text-xs font-medium px-2 py-1 rounded">
+          Sluiten
+        </button>
+      </div>
+
+      <!-- Drag & Drop Upload Zone -->
+      <section>
+        <div
+          id="dropZone"
+          class="relative border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500 rounded-2xl p-8 sm:p-12 text-center transition-all bg-white/60 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-900/70 cursor-pointer group shadow-sm"
+        >
+          <input
+            type="file"
+            id="fileInput"
+            accept=".csv,text/csv,text/plain"
+            class="hidden"
+          />
+
+          <div class="max-w-md mx-auto space-y-4 pointer-events-none">
+            <div class="w-16 h-16 mx-auto rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:scale-110 group-hover:text-indigo-500 dark:group-hover:text-indigo-300 transition-transform">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </div>
+
+            <div>
+              <p class="text-base font-semibold text-slate-900 dark:text-white">
+                Sleep je zware Celonis CSV event log hierheen
+              </p>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Ondersteunt bestanden tot 100MB+ • Vereist minimaal: <span class="text-slate-700 dark:text-slate-200 font-mono font-medium">Case ID</span>, <span class="text-slate-700 dark:text-slate-200 font-mono font-medium">Activity</span>, en <span class="text-slate-700 dark:text-slate-200 font-mono font-medium">Timestamp</span>
+              </p>
+            </div>
+
+            <div class="pt-2">
+              <button
+                type="button"
+                id="selectFileBtn"
+                class="pointer-events-auto inline-flex items-center px-4 py-2 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 transition-colors shadow-sm"
+              >
+                Of blader handmatig op je computer
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Progress & Non-Blocking Status Indicator -->
+      <section id="statusContainer" class="hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3 shadow-sm transition-colors">
+        <div class="flex items-center justify-between text-xs">
+          <span id="progressText" class="font-medium text-slate-800 dark:text-slate-200">CSV bestand inlezen...</span>
+          <span id="progressDetail" class="text-slate-500 dark:text-slate-400 font-mono">0 KB</span>
+        </div>
+        <div class="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+          <div id="progressBar" class="bg-indigo-600 dark:bg-indigo-500 h-full rounded-full transition-all duration-150" style="width: 0%"></div>
+        </div>
+        <p class="text-[11px] text-slate-500">
+          De native parser voert streaming & micro-batching uit zodat de browser interface vloeiend blijft zonder te bevriezen.
+        </p>
+      </section>
+
+      <!-- Empty State (Shown before any file is loaded) -->
+      <div id="emptyState" class="text-center py-12 px-4 border border-slate-200 dark:border-slate-800/60 rounded-2xl bg-white/40 dark:bg-slate-900/20 shadow-sm transition-colors">
+        <div class="w-12 h-12 mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 mb-3">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        </div>
+        <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Nog geen analyse beschikbaar</h3>
+        <p class="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+          Upload een CSV-bestand of klik op de knop bovenaan om direct met de Celonis Order-to-Cash voorbeelddata te testen.
+        </p>
+      </div>
+
+      <!-- Results Section (Visible after processing) -->
+      <section id="resultsSection" class="hidden space-y-6">
+
+        <!-- Action & Summary Header -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              Procesanalyse & Aggregatie
+            </h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Klaar voor AI-prompting • Volledig gecomprimeerd tot een JSON-payload &lt; 50KB
+            </p>
+          </div>
+
+          <!-- Result Action Buttons (Export CSV, JSON, Copy, Clear) -->
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- CSV Export Button -->
+            <button
+              id="exportCsvBtn"
+              class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors shadow-sm shadow-emerald-600/20 active:scale-95"
+              title="Download geaggregeerde varianten als CSV"
+            >
+              <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Exporteer naar CSV
+            </button>
+
+            <!-- View JSON Button -->
+            <button
+              id="viewJsonBtn"
+              class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors"
+            >
+              <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              Bekijk JSON
+            </button>
+
+            <!-- Copy JSON Button -->
+            <button
+              id="copyJsonBtn"
+              class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm shadow-indigo-600/20 active:scale-95"
+            >
+              <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+              </svg>
+              Kopieer JSON voor AI Prompt
+            </button>
+
+            <!-- Download JSON Button -->
+            <button
+              id="downloadJsonBtn"
+              class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors"
+            >
+              <svg class="w-3.5 h-3.5 mr-1.5 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download JSON
+            </button>
+
+            <!-- Clear Data Button -->
+            <button
+              id="clearDataBtn"
+              class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/30 transition-colors"
+              title="Verwijder data uit LocalStorage"
+            >
+              <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Wis data
+            </button>
+          </div>
+        </div>
+
+        <!-- 6 High-Impact KPI Metrics Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div class="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-colors">
+            <span class="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Cases</span>
+            <div id="kpiCases" class="text-xl font-bold text-slate-900 dark:text-white mt-1">0</div>
+            <span class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">Unieke Case ID's</span>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-colors">
+            <span class="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Events</span>
+            <div id="kpiEvents" class="text-xl font-bold text-slate-900 dark:text-white mt-1">0</div>
+            <span class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">Totaal rijen verwerkt</span>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-colors">
+            <span class="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Gem. Doorlooptijd</span>
+            <div id="kpiAvgTime" class="text-xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">0m</div>
+            <span class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">Eerste tot laatste stap</span>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-colors">
+            <span class="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Varianten</span>
+            <div id="kpiVariants" class="text-xl font-bold text-slate-900 dark:text-white mt-1">0</div>
+            <span class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">Unieke procesroutes</span>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-colors">
+            <span class="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">Payload Formaat</span>
+            <div id="kpiSize" class="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">0 KB</div>
+            <span class="text-[10px] text-emerald-500/80 mt-1 block">&lt; 50KB (Vercel bypass)</span>
+          </div>
+
+          <div class="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-colors">
+            <span class="text-[11px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Parse Snelheid</span>
+            <div id="kpiParseTime" class="text-xl font-bold text-slate-900 dark:text-white mt-1">0 ms</div>
+            <span class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">Client-side runtime</span>
+          </div>
+        </div>
+
+        <!-- Visualisatie: Chart.js Bar Chart Card -->
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm transition-colors">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Distributie van Procesvarianten (Chart.js)
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Frequentie en volume per procesvariant</p>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700">
+                Top 5 Varianten
+              </span>
+            </div>
+          </div>
+          <!-- Chart Canvas Container -->
+          <div class="h-64 sm:h-72 w-full relative">
+            <canvas id="variantsChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Top 5 Process Variants Table Card with Search/Filter -->
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm transition-colors">
+          
+          <!-- Table Header -->
+          <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 class="font-bold text-slate-900 dark:text-white text-sm">Top 5 Procesvarianten (Paden)</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Gerangschikt op frequentie van voorkomen in de dataset</p>
+            </div>
+            <span class="text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 self-start sm:self-auto">
+              Groepeer: Case ID
+            </span>
+          </div>
+
+          <!-- Real-time Activity Search / Filter Bar -->
+          <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="relative flex-1 max-w-md">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <input
+                type="text"
+                id="activitySearchInput"
+                placeholder="Zoek / filter op activiteit (bijv. 'Approval', 'Invoice', 'Pack')..."
+                class="w-full pl-9 pr-8 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+              />
+              <button
+                id="clearSearchBtn"
+                class="hidden absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                title="Wis filter"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span id="filterCountBadge" class="text-xs text-slate-500 dark:text-slate-400 font-medium">5 van 5 varianten zichtbaar</span>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 dark:bg-slate-950/60 text-slate-600 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
+                  <th class="py-3 px-4 w-20">Rang</th>
+                  <th class="py-3 px-4 min-w-[320px]">Procespad (Volgorde van Activiteiten)</th>
+                  <th class="py-3 px-4 text-right w-36">Cases & Aandeel</th>
+                  <th class="py-3 px-4 text-right w-44">Gem. Doorlooptijd</th>
+                </tr>
+              </thead>
+              <tbody id="variantsTableBody" class="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                <!-- Dynamically populated via script.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Prompt Helper Card: How to send this to AI -->
+        <div class="p-5 rounded-xl bg-gradient-to-r from-indigo-50 dark:from-indigo-950/40 via-white dark:via-slate-900 to-white dark:to-slate-900 border border-indigo-200 dark:border-indigo-900/40 space-y-2 shadow-sm transition-colors">
+          <div class="flex items-center space-x-2 text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase tracking-wider">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Hoe gebruik je deze samenvatting in je AI-Bottleneck prompt?</span>
+          </div>
+          <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            Klik op <strong class="text-slate-900 dark:text-white">"Kopieer JSON voor AI Prompt"</strong>. Deze compacte JSON (<span class="text-emerald-600 dark:text-emerald-400 font-semibold">&lt; 50KB</span>) bevat alle procesvarianten, afwijkingen en doorlooptijden, zonder dat er privacygevoelige persoonsgegevens of miljoenen ruwe eventregels naar het AI-model verzonden worden.
+          </p>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 py-6 text-center text-xs text-slate-500 transition-colors">
+      <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <p>AI-Bottleneck Analist • Snelle Vanilla JS Process Mining Architecture</p>
+        <p class="text-slate-500 dark:text-slate-400">GDPR Compliant • FileReader API • LocalStorage Engine • Chart.js</p>
+      </div>
+    </footer>
+
+    <!-- History Drawer / Modal -->
+    <div id="historyModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden transition-colors">
+        <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/50">
+          <div>
+            <h3 class="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+              <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Analyse Geschiedenis
+            </h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400">De laatste 5 lokaal geanalyseerde event logs</p>
+          </div>
+          <button id="closeHistoryModalBtn" class="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- History Items List -->
+        <div id="historyListContainer" class="p-4 flex-1 overflow-auto divide-y divide-slate-100 dark:divide-slate-800 space-y-3">
+          <!-- Dynamically populated via script.js -->
+        </div>
+
+        <!-- History Footer -->
+        <div class="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex items-center justify-between">
+          <button id="clearAllHistoryBtn" class="text-xs text-rose-600 dark:text-rose-400 hover:underline">
+            Wis hele geschiedenis
+          </button>
+          <button id="closeHistoryFooterBtn" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors">
+            Sluiten
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- JSON Preview Modal -->
+    <div id="jsonModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden transition-colors">
+        <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950/50">
+          <div>
+            <h3 class="font-bold text-slate-900 dark:text-white text-sm">Geaggregeerd JSON Resultaat (&lt; 50KB)</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Exacte payload die in LocalStorage is bewaard</p>
+          </div>
+          <button id="closeJsonModalBtn" class="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="p-4 flex-1 overflow-auto bg-slate-900 font-mono text-xs text-emerald-400">
+          <pre id="jsonPreview" class="whitespace-pre-wrap leading-relaxed"></pre>
+        </div>
+
+        <div class="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-end gap-2">
+          <button id="copyModalJsonBtn" class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm">
+            Kopieer JSON naar klembord
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Feedback Notification -->
+    <div
+      id="toast"
+      class="fixed bottom-6 right-6 z-50 max-w-sm px-4 py-3 rounded-xl bg-indigo-600 text-white shadow-xl flex items-center space-x-2 text-xs font-medium transition-all duration-300 opacity-0 pointer-events-none translate-y-2"
+    >
+      <svg class="w-4 h-4 text-indigo-200 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+      </svg>
+      <span id="toastMessage">Actie voltooid</span>
+    </div>
+
+    <!-- Load Native Vanilla JS Script -->
+    <script src="/script.js"></script>
+  </body>
+</html>
