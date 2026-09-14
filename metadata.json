@@ -1,6 +1,0 @@
-{
-  "name": "AI-Bottleneck Analist",
-  "description": "Lokale browser-gebaseerde Celonis/CSV process mining engine die event logs lokaal verwerkt tot varianten en doorlooptijden (< 50KB JSON) met GDPR-veilige client-side opslag.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
