@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Exclude AI Studio container files from Git so Vercel treats repo as pure static HTML/JS
+metadata.json
+package.json
+package-lock.json
