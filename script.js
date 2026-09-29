@@ -11,12 +11,15 @@
   const STORAGE_KEY_CURRENT = 'ai_bottleneck_summary_v1';
   const STORAGE_KEY_HISTORY = 'ai_bottleneck_history_v1';
   const STORAGE_KEY_THEME = 'ai_bottleneck_theme';
+  const STORAGE_KEY_GEMINI_KEY = 'ai_bottleneck_gemini_key';
 
   // State
   let currentSummary = null;
   let isProcessing = false;
   let chartInstance = null;
   let activeSearchTerm = '';
+  let isGeneratingAiAdvice = false;
+  let activePageId = 'pageAnalyse';
 
   // DOM Elements - Core UI
   const dropZone = document.getElementById('dropZone');
@@ -30,6 +33,45 @@
   const viewJsonBtn = document.getElementById('viewJsonBtn');
   const closeJsonModalBtn = document.getElementById('closeJsonModalBtn');
   const copyModalJsonBtn = document.getElementById('copyModalJsonBtn');
+
+  // Gemini AI Elements
+  const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
+  const toggleApiKeyVisibility = document.getElementById('toggleApiKeyVisibility');
+  const eyeIconShow = document.getElementById('eyeIconShow');
+  const eyeIconHide = document.getElementById('eyeIconHide');
+  const apiKeyStatusBadge = document.getElementById('apiKeyStatusBadge');
+  const generateAiAdviceBtn = document.getElementById('generateAiAdviceBtn');
+  const generateAiAdviceSectionBtn = document.getElementById('generateAiAdviceSectionBtn');
+  const aiBtnSpinner = document.getElementById('aiBtnSpinner');
+  const aiBtnIcon = document.getElementById('aiBtnIcon');
+  const aiBtnText = document.getElementById('aiBtnText');
+  const aiAdviceContainer = document.getElementById('aiAdviceContainer');
+  const aiEmptyState = document.getElementById('aiEmptyState');
+  const aiLoadingState = document.getElementById('aiLoadingState');
+  const aiLoadingStatusText = document.getElementById('aiLoadingStatusText');
+  const aiErrorState = document.getElementById('aiErrorState');
+  const aiErrorMessage = document.getElementById('aiErrorMessage');
+  const aiResultState = document.getElementById('aiResultState');
+  const aiAdviceContent = document.getElementById('aiAdviceContent');
+  const aiTimestamp = document.getElementById('aiTimestamp');
+  const copyAiAdviceBtn = document.getElementById('copyAiAdviceBtn');
+  const aiTokensInfo = document.getElementById('aiTokensInfo');
+
+  // Multi-Page Stepper Navigation Elements
+  const tabBtnAnalyse = document.getElementById('tabBtnAnalyse');
+  const tabBtnAiAdvies = document.getElementById('tabBtnAiAdvies');
+  const tabBtnOplossing = document.getElementById('tabBtnOplossing');
+  const pageAnalyse = document.getElementById('pageAnalyse');
+  const pageAiAdvies = document.getElementById('pageAiAdvies');
+  const pageOplossing = document.getElementById('pageOplossing');
+  const tab1DataIndicator = document.getElementById('tab1DataIndicator');
+  const tab2AdviesBadge = document.getElementById('tab2AdviesBadge');
+  const goToAiAdviesFromBottomBtn = document.getElementById('goToAiAdviesFromBottomBtn');
+  const goToOplossingFromAdviceBtn = document.getElementById('goToOplossingFromAdviceBtn');
+  const aiActiveDatasetName = document.getElementById('aiActiveDatasetName');
+  const aiActiveDatasetMetrics = document.getElementById('aiActiveDatasetMetrics');
+  const backToAnalyseBtns = document.querySelectorAll('.back-to-analyse-btn');
+  const backToAdviceBtns = document.querySelectorAll('.back-to-advice-btn');
 
   // Theme Toggle Elements
   const themeToggleBtn = document.getElementById('themeToggleBtn');
@@ -88,9 +130,12 @@
 
   function init() {
     initTheme();
+    initApiKey();
+    initPageRouting();
     setupEventListeners();
     renderHistoryBadge();
     loadFromLocalStorage();
+    updatePage2DatasetPreview();
   }
 
   // ==========================================
@@ -248,6 +293,171 @@
     }
     if (clearAllHistoryBtn) {
       clearAllHistoryBtn.addEventListener('click', clearAllHistory);
+    }
+
+    // Multi-Page Navigation Listeners
+    if (tabBtnAnalyse) tabBtnAnalyse.addEventListener('click', () => switchPage('pageAnalyse'));
+    if (tabBtnAiAdvies) tabBtnAiAdvies.addEventListener('click', () => switchPage('pageAiAdvies'));
+    if (tabBtnOplossing) tabBtnOplossing.addEventListener('click', () => switchPage('pageOplossing'));
+
+    if (goToAiAdviesFromBottomBtn) {
+      goToAiAdviesFromBottomBtn.addEventListener('click', () => {
+        switchPage('pageAiAdvies');
+      });
+    }
+
+    if (goToOplossingFromAdviceBtn) {
+      goToOplossingFromAdviceBtn.addEventListener('click', () => {
+        switchPage('pageOplossing');
+      });
+    }
+
+    backToAnalyseBtns.forEach(btn => {
+      btn.addEventListener('click', () => switchPage('pageAnalyse'));
+    });
+
+    backToAdviceBtns.forEach(btn => {
+      btn.addEventListener('click', () => switchPage('pageAiAdvies'));
+    });
+
+    // Google Gemini AI Listeners
+    if (toggleApiKeyVisibility) {
+      toggleApiKeyVisibility.addEventListener('click', toggleApiKeyVisibilityHandler);
+    }
+    if (geminiApiKeyInput) {
+      geminiApiKeyInput.addEventListener('input', handleApiKeyInput);
+    }
+    if (generateAiAdviceBtn) {
+      // Knop op Pagina 1: navigeert naar Pagina 2 en activeert het AI-advies
+      generateAiAdviceBtn.addEventListener('click', () => {
+        switchPage('pageAiAdvies');
+
+        if (!currentSummary || !currentSummary.payload) {
+          showToast('Upload eerst een CSV-bestand in Stap 1.');
+          return;
+        }
+
+        let apiKey = (geminiApiKeyInput ? geminiApiKeyInput.value : '').trim();
+        if (!apiKey) {
+          try {
+            apiKey = (localStorage.getItem(STORAGE_KEY_GEMINI_KEY) || '').trim();
+          } catch (e) {}
+        }
+
+        if (!apiKey) {
+          showToast('Vul je Google Gemini API Key in om het advies te genereren.');
+          if (geminiApiKeyInput) {
+            setTimeout(() => geminiApiKeyInput.focus(), 300);
+          }
+          return;
+        }
+
+        // Genereer advies op pagina 2
+        generateAiAdvice();
+      });
+    }
+    if (generateAiAdviceSectionBtn) {
+      generateAiAdviceSectionBtn.addEventListener('click', generateAiAdvice);
+    }
+    if (copyAiAdviceBtn) {
+      copyAiAdviceBtn.addEventListener('click', copyAiAdviceToClipboard);
+    }
+  }
+
+  // ==========================================
+  // 2B. MULTI-PAGE STEPPER / ROUTING MANAGEMENT
+  // ==========================================
+  function initPageRouting() {
+    const hash = window.location.hash;
+    if (hash === '#ai-advies') {
+      switchPage('pageAiAdvies', false);
+    } else if (hash === '#oplossing') {
+      switchPage('pageOplossing', false);
+    } else {
+      switchPage('pageAnalyse', false);
+    }
+
+    window.addEventListener('hashchange', () => {
+      const currentHash = window.location.hash;
+      if (currentHash === '#ai-advies') {
+        switchPage('pageAiAdvies', false);
+      } else if (currentHash === '#oplossing') {
+        switchPage('pageOplossing', false);
+      } else {
+        switchPage('pageAnalyse', false);
+      }
+    });
+  }
+
+  function switchPage(targetPageId, updateHash = true) {
+    activePageId = targetPageId;
+
+    const pages = [
+      { id: 'pageAnalyse', el: pageAnalyse, tab: tabBtnAnalyse, hash: '#analyse' },
+      { id: 'pageAiAdvies', el: pageAiAdvies, tab: tabBtnAiAdvies, hash: '#ai-advies' },
+      { id: 'pageOplossing', el: pageOplossing, tab: tabBtnOplossing, hash: '#oplossing' }
+    ];
+
+    pages.forEach(p => {
+      if (!p.el) return;
+      const isTarget = p.id === targetPageId;
+      if (isTarget) {
+        p.el.classList.remove('hidden');
+      } else {
+        p.el.classList.add('hidden');
+      }
+
+      if (p.tab) {
+        const badge = p.tab.querySelector('.step-badge');
+        if (isTarget) {
+          p.tab.className = 'tab-nav-btn inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 shadow-sm';
+          if (badge) {
+            badge.className = 'step-badge w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold bg-indigo-600 text-white';
+          }
+        } else {
+          p.tab.className = 'tab-nav-btn inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 border border-transparent';
+          if (badge) {
+            badge.className = 'step-badge w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300';
+          }
+        }
+      }
+    });
+
+    if (updateHash) {
+      const activeObj = pages.find(p => p.id === targetPageId);
+      if (activeObj && window.location.hash !== activeObj.hash) {
+        history.replaceState(null, '', activeObj.hash);
+      }
+    }
+
+    if (targetPageId === 'pageAnalyse' && chartInstance) {
+      setTimeout(() => {
+        try { chartInstance.resize(); } catch (_) {}
+      }, 50);
+    }
+
+    if (targetPageId === 'pageAiAdvies') {
+      updatePage2DatasetPreview();
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function updatePage2DatasetPreview() {
+    if (!aiActiveDatasetName || !aiActiveDatasetMetrics) return;
+
+    if (currentSummary && currentSummary.payload) {
+      aiActiveDatasetName.textContent = currentSummary.metadata.fileName;
+      aiActiveDatasetName.classList.remove('text-slate-400', 'italic');
+      aiActiveDatasetName.classList.add('text-indigo-600', 'dark:text-indigo-400');
+      
+      const { kpis } = currentSummary.payload;
+      aiActiveDatasetMetrics.textContent = `${kpis.totalCases.toLocaleString('nl-NL')} cases • ${kpis.totalEvents.toLocaleString('nl-NL')} events • ${kpis.uniqueVariantsCount} unieke procesvarianten • Gem. doorlooptijd: ${kpis.avgThroughputFormatted}`;
+    } else {
+      aiActiveDatasetName.textContent = 'Geen dataset geladen';
+      aiActiveDatasetName.classList.remove('text-indigo-600', 'dark:text-indigo-400');
+      aiActiveDatasetName.classList.add('text-slate-400', 'italic');
+      aiActiveDatasetMetrics.textContent = 'Laad eerst een CSV in Stap 1 om de statistieken hier automatisch in te laden.';
     }
   }
 
@@ -1134,6 +1344,19 @@
       storageBadge.classList.add('flex');
       storageTime.textContent = summary.metadata.analyzedDate;
     }
+
+    // Step indicators & dataset preview
+    if (tab1DataIndicator) tab1DataIndicator.classList.remove('hidden');
+    updatePage2DatasetPreview();
+
+    // Restore or reset AI Advice UI
+    if (summary.aiAdvice && summary.aiAdvice.text) {
+      renderAiAdvice(summary.aiAdvice.text, summary.aiAdvice.timestamp);
+      if (tab2AdviesBadge) tab2AdviesBadge.classList.remove('hidden');
+    } else {
+      resetAiAdviceUI();
+      if (tab2AdviesBadge) tab2AdviesBadge.classList.add('hidden');
+    }
   }
 
   // ==========================================
@@ -1174,6 +1397,10 @@
         chartInstance.destroy();
         chartInstance = null;
       }
+      if (tab1DataIndicator) tab1DataIndicator.classList.add('hidden');
+      if (tab2AdviesBadge) tab2AdviesBadge.classList.add('hidden');
+      updatePage2DatasetPreview();
+      resetAiAdviceUI();
       showToast('Opgeslagen data is gewist uit LocalStorage.');
     } catch (e) {
       console.error(e);
@@ -1369,6 +1596,532 @@
     const file = new File([blob], 'celonis_sample_order_to_cash.csv', { type: 'text/csv' });
 
     startParsing(file);
+  }
+
+  // ==========================================
+  // 14. GOOGLE GEMINI AI ADVICE (REST FETCH)
+  // ==========================================
+  function initApiKey() {
+    try {
+      const savedKey = localStorage.getItem(STORAGE_KEY_GEMINI_KEY);
+      if (savedKey && geminiApiKeyInput) {
+        geminiApiKeyInput.value = savedKey;
+        if (apiKeyStatusBadge) {
+          apiKeyStatusBadge.classList.remove('hidden');
+        }
+      }
+    } catch (e) {
+      console.warn('Fout bij laden API-key uit localStorage:', e);
+    }
+  }
+
+  function handleApiKeyInput(e) {
+    const key = (e.target.value || '').trim();
+    try {
+      if (key) {
+        localStorage.setItem(STORAGE_KEY_GEMINI_KEY, key);
+        if (apiKeyStatusBadge) apiKeyStatusBadge.classList.remove('hidden');
+      } else {
+        localStorage.removeItem(STORAGE_KEY_GEMINI_KEY);
+        if (apiKeyStatusBadge) apiKeyStatusBadge.classList.add('hidden');
+      }
+    } catch (err) {
+      console.warn('Fout bij opslaan API-key:', err);
+    }
+  }
+
+  function toggleApiKeyVisibilityHandler() {
+    if (!geminiApiKeyInput) return;
+    const isPassword = geminiApiKeyInput.type === 'password';
+    geminiApiKeyInput.type = isPassword ? 'text' : 'password';
+
+    if (eyeIconShow && eyeIconHide) {
+      if (isPassword) {
+        eyeIconShow.classList.add('hidden');
+        eyeIconHide.classList.remove('hidden');
+      } else {
+        eyeIconShow.classList.remove('hidden');
+        eyeIconHide.classList.add('hidden');
+      }
+    }
+  }
+
+  /**
+   * Compacte Zero-data-leak aggregatie-extractie (< 3KB JSON).
+   * Verzendt uitsluitend berekende KPI-statistieken en procesvarianten; nooit ruwe CSV-records.
+   */
+  function extractKpiSummaryForAi(summary) {
+    if (!summary || !summary.payload) return null;
+    const { kpis, top5Variants } = summary.payload;
+
+    // Sorteer op doorlooptijd om langzaamste én snelste varianten te bepalen
+    const sortedByDuration = [...top5Variants].sort((a, b) => b.avgThroughputMs - a.avgThroughputMs);
+    const slowestVariant = sortedByDuration[0] || null;
+    const fastestVariant = sortedByDuration[sortedByDuration.length - 1] || null;
+
+    // Detecteer varianten met vertraging t.o.v. het algemeen gemiddelde (> 0% trager)
+    const bottleneckVariants = top5Variants
+      .filter(v => v.varianceVsOverallAvg > 0)
+      .map(v => ({
+        variant_rang: `#${v.rank}`,
+        procespad: v.path,
+        processtappen: v.steps,
+        aantal_cases: v.caseCount,
+        aandeel_percentage: `${v.percentage}%`,
+        gemiddelde_doorlooptijd: v.avgThroughputFormatted,
+        minimale_doorlooptijd: v.minThroughputFormatted,
+        maximale_doorlooptijd: v.maxThroughputFormatted,
+        vertraging_tov_algemeen_gemiddelde: `+${v.varianceVsOverallAvg}%`
+      }));
+
+    const totalDelayedCases = bottleneckVariants.reduce((sum, v) => sum + v.aantal_cases, 0);
+    const totalDelayedPercentage = kpis.totalCases > 0 ? Number(((totalDelayedCases / kpis.totalCases) * 100).toFixed(1)) : 0;
+
+    return {
+      analyse_metadata: {
+        bronbestand: summary.metadata.fileName,
+        geanalyseerd_op: summary.metadata.analyzedDate
+      },
+      proces_kpis: {
+        totaal_cases: kpis.totalCases,
+        totaal_events: kpis.totalEvents,
+        unieke_procesvarianten: kpis.uniqueVariantsCount,
+        algemene_gemiddelde_doorlooptijd: kpis.avgThroughputFormatted,
+        mediane_doorlooptijd: kpis.medianThroughputFormatted,
+        totaal_vertraagde_cases: `${totalDelayedCases} van de ${kpis.totalCases} cases (${totalDelayedPercentage}%)`
+      },
+      top_procesvarianten: top5Variants.map(v => ({
+        rang: v.rank,
+        pad: v.path,
+        stappen: v.steps,
+        aantal_stappen: v.steps.length,
+        aantal_cases: v.caseCount,
+        aandeel_percentage: `${v.percentage}%`,
+        gemiddelde_doorlooptijd: v.avgThroughputFormatted,
+        minimale_doorlooptijd: v.minThroughputFormatted,
+        maximale_doorlooptijd: v.maxThroughputFormatted,
+        afwijking_tov_algemeen_gemiddelde: `${v.varianceVsOverallAvg > 0 ? '+' : ''}${v.varianceVsOverallAvg}%`
+      })),
+      geconstateerde_knelpunten: {
+        aantal_vertraagde_varianten: bottleneckVariants.length,
+        totaal_cases_in_bottlenecks: `${totalDelayedCases} (${totalDelayedPercentage}%)`,
+        langzaamste_variant: slowestVariant ? {
+          rang: `#${slowestVariant.rank}`,
+          pad: slowestVariant.path,
+          stappen: slowestVariant.steps,
+          gemiddelde_doorlooptijd: slowestVariant.avgThroughputFormatted,
+          minimale_doorlooptijd: slowestVariant.minThroughputFormatted,
+          maximale_doorlooptijd: slowestVariant.maxThroughputFormatted,
+          afwijking_tov_gemiddelde: `+${slowestVariant.varianceVsOverallAvg}%`
+        } : null,
+        snelste_procesroute_benchmark: fastestVariant && fastestVariant !== slowestVariant ? {
+          rang: `#${fastestVariant.rank}`,
+          pad: fastestVariant.path,
+          doorlooptijd: fastestVariant.avgThroughputFormatted,
+          aandeel: `${fastestVariant.percentage}%`
+        } : null,
+        vertraagde_procesvarianten: bottleneckVariants
+      }
+    };
+  }
+
+  /**
+   * Asynchrone fetch-aanroep naar Google Gemini 3.8 Flash REST endpoint
+   */
+  async function generateAiAdvice() {
+    if (isGeneratingAiAdvice) return;
+
+    if (!currentSummary || !currentSummary.payload) {
+      showToast('Laad eerst een dataset in om AI-advies te kunnen genereren.');
+      return;
+    }
+
+    // Haal API key op
+    let apiKey = (geminiApiKeyInput ? geminiApiKeyInput.value : '').trim();
+    if (!apiKey) {
+      try {
+        apiKey = (localStorage.getItem(STORAGE_KEY_GEMINI_KEY) || '').trim();
+      } catch (e) {}
+    }
+
+    if (!apiKey) {
+      showAiError('Voer eerst een geldige Google Gemini API Key in om de procesanalyse te starten. De sleutel wordt uitsluitend lokaal in je browser bewaard.');
+      if (geminiApiKeyInput) {
+        geminiApiKeyInput.focus();
+      }
+      return;
+    }
+
+    // Sla op in LocalStorage
+    try {
+      localStorage.setItem(STORAGE_KEY_GEMINI_KEY, apiKey);
+      if (apiKeyStatusBadge) apiKeyStatusBadge.classList.remove('hidden');
+    } catch (e) {}
+
+    // Extract compacte KPI-statistieken
+    const kpiSummary = extractKpiSummaryForAi(currentSummary);
+    if (!kpiSummary) {
+      showAiError('Kon geen geaggregeerde KPI-statistieken samenstellen uit de dataset.');
+      return;
+    }
+
+    setAiLoading(true);
+
+    const systemPromptText = `Je bent een Principal Process Mining & AI Transformation Consultant. Je analyseert geaggregeerde procesmining-statistieken (KPI's, varianten, events en bottlenecks).
+Jouw taak is het leveren van een uitbundig, diepgaand en gedegen onderbouwd adviesrapport in helder, zakelijk en adviserend Nederlands.
+
+Belangrijke richtlijnen:
+1. De rapportage bevat altijd een uitgebreide bottleneck-diagnose (1), een diepgaande root cause analyse (2), en een uitgebreid advies over wat er geautomatiseerd dient te worden (3).
+2. Zorg dat het advies uitbundig en rijk gedetailleerd is: onderbouw stellingen met concrete cijfers uit de data (percentages, tijdsverschillen tussen varianten, aantal geraakte cases, spreiding tussen min en max).
+3. Geef in het adviesgedeelte concrete, tastbare handvatten over wélke handmatige handelingen en stappen geëlimineerd of geautomatiseerd moeten worden, inclusief Straight-Through Processing (STP) en intelligente AI-oplossingen (die als basis dienen voor Stap 3 van deze applicatie).
+
+Hanteer altijd de volgende 4 gestructureerde hoofdsecties in Markdown:
+
+## 1. Uitgebreide Bottleneck- en Knelpuntdiagnose
+- Benoem exact welke specifieke procesroutes, stappen en handmatige overgangen de grootste vertraging in de keten veroorzaken.
+- Kwantitatieve onderbouwing: Vergelijk de doorlooptijd van de langzaamste variant(en) met het procesgemiddelde, de mediaan en de snelste 'happy flow'. Benoem het exacte aantal en percentage cases dat hierdoor geraakt wordt, inclusief de spreiding (min-max).
+
+## 2. Diepgaande Oorzaakanalyse (Root Causes)
+- Waarom ontstaat dit knelpunt in de praktijk? (bijv. herwerk/rework, wachttijd op goedkeuringen, menselijke overdrachten, validatiefouten, inconsistente werkinstructies of ontbrekende systeemkoppelingen).
+- Maak een helder onderscheid tussen menselijke/organisatorische oorzaken en systeemtechnische fricties.
+
+## 3. Advies: Wat dient er geautomatiseerd te worden?
+Werk een concreet, uitvoerig en strategisch automatiseringsadvies uit:
+- **Concrete handmatige taken die geautomatiseerd moeten worden**:
+  Benoem specifiek welke individuele activiteiten en overgangen (zoals manuele goedkeuringen, handmatige kredietbeoordelingen, data-overdracht tussen systemen, prijsvalidaties of herhalende controles) direct uit de menselijke werkstroom gehaald moeten worden en waarom.
+- **A. Straight-Through Processing (STP) & Regelgebaseerde Automatisering**:
+  Welke standaardgevallen kunnen 100% 'zero-touch' (zonder enige menselijke interventie) worden afgehandeld via automatische validatieregels, API-koppelingen tussen ERP/CRM en geautomatiseerde triggers?
+- **B. Intelligente & AI-Gedreven Automatisering (Voorbereiding op Stap 3: AI-Oplossing Bouwen)**:
+  Welke geavanceerde AI-, LLM- of machine learning oplossingen kunnen ingezet worden voor complexere uitzonderingen? (Denk aan: AI-gebaseerde voorspellende risicoscoring, geautomatiseerde documentextractie en -validatie, intelligente uitzonderingstriage, automatische communicatie-agents of voorspellende routering).
+- **C. Directe Procesoptimalisaties (Quick Wins)**:
+  Wat kan de organisatie direct in beleid, drempelwaarden of routing aanpassen om de wachttijd per direct te verminderen terwijl de automatisering wordt ingericht?
+
+## 4. Kwantitatieve Impact & Meetbare Business Case
+- Welke potentiële tijdwinst en doorlooptijdreductie (in uren/dagen en %) is realistisch haalbaar als deze automatiseringen worden doorgevoerd?
+- Welke 3 kern-KPI's moet het procesmanagement monitoren om het succes structureel te borgen (bijv. STP-ratio, first-time-right ratio, gemiddelde doorlooptijd van uitzonderingen)?`;
+
+    const userPromptText = `Hier zijn de geaggregeerde procesmining-statistieken van het geanalyseerde proces:\n\n${JSON.stringify(kpiSummary, null, 2)}\n\nStel een uitbundig, diepgaand en grondig onderbouwd adviesrapport op volgens de 4 secties:\n1. Uitgebreide Bottleneck- en Knelpuntdiagnose (kwantitatief onderbouwd)\n2. Diepgaande Oorzaakanalyse (Root Causes)\n3. Advies: Wat dient er geautomatiseerd te worden? (met specifieke handmatige stappen die geëlimineerd moeten worden, Straight-Through Processing en AI-automatisering)\n4. Kwantitatieve Impact & Meetbare Business Case\n\nBesteed in sectie 3 nadrukkelijk en uitgebreid aandacht aan wat er precies geautomatiseerd dient te worden.`;
+
+    const requestPayload = {
+      system_instruction: {
+        parts: [
+          { text: systemPromptText }
+        ]
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: userPromptText }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 3500
+      }
+    };
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestPayload)
+      });
+
+      if (!response.ok) {
+        let errMessage = `HTTP ${response.status} ${response.statusText}`;
+        try {
+          const errData = await response.json();
+          if (errData && errData.error && errData.error.message) {
+            errMessage = errData.error.message;
+          }
+        } catch (_) {}
+
+        if (response.status === 400 || response.status === 403) {
+          throw new Error(`Ongeldige API-sleutel of onvoldoende rechten (HTTP ${response.status}). Controleer of je de juiste Google Gemini API Key hebt ingevoerd: ${errMessage}`);
+        } else if (response.status === 429) {
+          throw new Error(`Google Gemini API quotum overschreden (Rate limit / Quota exceeded, HTTP 429). Probeer het over een minuut nog eens.`);
+        } else {
+          throw new Error(`Fout bij aanroepen Gemini API (HTTP ${response.status}): ${errMessage}`);
+        }
+      }
+
+      const data = await response.json();
+      const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!generatedText) {
+        throw new Error('Geen adviestekst ontvangen van Google Gemini API.');
+      }
+
+      const timestamp = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      
+      // Bewaar advies in state en LocalStorage
+      currentSummary.aiAdvice = {
+        text: generatedText,
+        timestamp: `Gegenereerd om ${timestamp}`
+      };
+      saveToLocalStorage(currentSummary);
+
+      renderAiAdvice(generatedText, `Gegenereerd om ${timestamp}`);
+      if (tab2AdviesBadge) tab2AdviesBadge.classList.remove('hidden');
+      showToast('Uitgebreid AI-advies en oplossingen succesvol gegenereerd!');
+
+    } catch (error) {
+      console.error('Gemini API Error:', error);
+      let userFriendlyMsg = error.message;
+      if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('NetworkError'))) {
+        userFriendlyMsg = 'Netwerkfout: kon geen verbinding maken met Google Generative Language API. Controleer je internetverbinding of adblocker.';
+      }
+      showAiError(userFriendlyMsg);
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function setAiLoading(isLoading) {
+    isGeneratingAiAdvice = isLoading;
+
+    if (generateAiAdviceBtn) {
+      generateAiAdviceBtn.disabled = isLoading;
+      if (isLoading) {
+        generateAiAdviceBtn.classList.add('opacity-75', 'cursor-not-allowed');
+      } else {
+        generateAiAdviceBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+      }
+    }
+
+    if (generateAiAdviceSectionBtn) {
+      generateAiAdviceSectionBtn.disabled = isLoading;
+      if (isLoading) {
+        generateAiAdviceSectionBtn.classList.add('opacity-75', 'cursor-not-allowed');
+      } else {
+        generateAiAdviceSectionBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+      }
+    }
+
+    if (aiBtnSpinner) {
+      if (isLoading) aiBtnSpinner.classList.remove('hidden');
+      else aiBtnSpinner.classList.add('hidden');
+    }
+    if (aiBtnIcon) {
+      if (isLoading) aiBtnIcon.classList.add('hidden');
+      else aiBtnIcon.classList.remove('hidden');
+    }
+    if (aiBtnText) {
+      aiBtnText.textContent = isLoading ? 'Analyseren & Oplossingen genereren...' : 'Genereer AI-advies';
+    }
+
+    if (isLoading) {
+      if (aiEmptyState) aiEmptyState.classList.add('hidden');
+      if (aiErrorState) aiErrorState.classList.add('hidden');
+      if (aiResultState) aiResultState.classList.add('hidden');
+      if (aiLoadingState) aiLoadingState.classList.remove('hidden');
+    } else {
+      if (aiLoadingState) aiLoadingState.classList.add('hidden');
+    }
+  }
+
+  function showAiError(msg) {
+    if (aiLoadingState) aiLoadingState.classList.add('hidden');
+    if (aiEmptyState) aiEmptyState.classList.add('hidden');
+    if (aiResultState) aiResultState.classList.add('hidden');
+    if (aiErrorState && aiErrorMessage) {
+      aiErrorMessage.textContent = msg;
+      aiErrorState.classList.remove('hidden');
+    }
+  }
+
+  function renderAiAdvice(text, timestampText) {
+    if (aiEmptyState) aiEmptyState.classList.add('hidden');
+    if (aiLoadingState) aiLoadingState.classList.add('hidden');
+    if (aiErrorState) aiErrorState.classList.add('hidden');
+
+    if (aiResultState && aiAdviceContent) {
+      aiAdviceContent.innerHTML = formatMarkdownToHtml(text);
+      if (aiTimestamp) aiTimestamp.textContent = timestampText || '';
+      aiResultState.classList.remove('hidden');
+    }
+  }
+
+  function resetAiAdviceUI() {
+    if (aiLoadingState) aiLoadingState.classList.add('hidden');
+    if (aiErrorState) aiErrorState.classList.add('hidden');
+    if (aiResultState) aiResultState.classList.add('hidden');
+    if (aiEmptyState) aiEmptyState.classList.remove('hidden');
+  }
+
+  function formatMarkdownToHtml(markdown) {
+    if (!markdown) return '';
+
+    const lines = markdown.split(/\r?\n/);
+    const htmlChunks = [];
+    let inList = false;
+    let inTable = false;
+    let tableRows = [];
+
+    function flushList() {
+      if (inList) {
+        htmlChunks.push('</ul>');
+        inList = false;
+      }
+    }
+
+    function flushTable() {
+      if (inTable && tableRows.length > 0) {
+        let tableHtml = '<div class="overflow-x-auto my-3"><table class="min-w-full text-xs border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">';
+        tableRows.forEach((row, rIdx) => {
+          const cells = row.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1).map(c => c.trim());
+          if (rIdx === 0) {
+            tableHtml += '<thead class="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold"><tr>';
+            cells.forEach(c => tableHtml += `<th class="px-3 py-2 text-left border-b border-slate-200 dark:border-slate-700">${formatInlineMarkdown(c)}</th>`);
+            tableHtml += '</tr></thead><tbody>';
+          } else if (rIdx === 1 && cells.every(c => /^[-:]+$/.test(c))) {
+            // divider row, skip
+          } else {
+            tableHtml += '<tr class="border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/30">';
+            cells.forEach(c => tableHtml += `<td class="px-3 py-2 text-slate-700 dark:text-slate-300">${formatInlineMarkdown(c)}</td>`);
+            tableHtml += '</tr>';
+          }
+        });
+        tableHtml += '</tbody></table></div>';
+        htmlChunks.push(tableHtml);
+        inTable = false;
+        tableRows = [];
+      }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
+
+      // Table line check
+      if (line.startsWith('|') && line.endsWith('|')) {
+        flushList();
+        inTable = true;
+        tableRows.push(line);
+        continue;
+      } else if (inTable) {
+        flushTable();
+      }
+
+      if (!line) {
+        flushList();
+        continue;
+      }
+
+      // Horizontal rule (--- or ***)
+      if (/^([-*_]){3,}$/.test(line)) {
+        flushList();
+        htmlChunks.push('<hr class="my-4 border-slate-200 dark:border-slate-800" />');
+        continue;
+      }
+
+      // Blockquote (> )
+      if (line.startsWith('> ')) {
+        flushList();
+        const quoteContent = formatInlineMarkdown(line.slice(2));
+        htmlChunks.push(`
+          <div class="my-2.5 p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border-l-4 border-indigo-500 text-xs text-indigo-950 dark:text-indigo-200 leading-relaxed italic">
+            ${quoteContent}
+          </div>
+        `);
+        continue;
+      }
+
+      // Headers (####, ###, ##, #)
+      if (line.startsWith('#### ')) {
+        flushList();
+        const headingText = formatInlineMarkdown(line.slice(5));
+        htmlChunks.push(`<h5 class="text-xs font-bold text-slate-800 dark:text-slate-200 mt-3 mb-1 uppercase tracking-wider">${headingText}</h5>`);
+        continue;
+      }
+      if (line.startsWith('### ')) {
+        flushList();
+        const headingText = formatInlineMarkdown(line.slice(4));
+        htmlChunks.push(`
+          <div class="mt-4 mb-2 flex items-center gap-2">
+            <span class="w-1.5 h-3.5 bg-indigo-500 rounded-full"></span>
+            <h4 class="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">${headingText}</h4>
+          </div>
+        `);
+        continue;
+      }
+      if (line.startsWith('## ') || line.startsWith('# ')) {
+        flushList();
+        const clean = line.replace(/^#+\s*/, '');
+        const headingText = formatInlineMarkdown(clean);
+        htmlChunks.push(`
+          <div class="mt-6 mb-3 pb-2 border-b border-slate-200 dark:border-slate-800">
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <span class="p-1 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-mono">▸</span>
+              <span>${headingText}</span>
+            </h3>
+          </div>
+        `);
+        continue;
+      }
+
+      // Numbered list item (e.g. "1. ..." or "1) ...")
+      const numMatch = line.match(/^(\d+)[\.\)]\s+(.*)/);
+      if (numMatch) {
+        flushList();
+        const num = numMatch[1];
+        const content = formatInlineMarkdown(numMatch[2]);
+        htmlChunks.push(`
+          <div class="p-3.5 my-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 shadow-xs">
+            <div class="flex items-start gap-2.5">
+              <span class="w-5 h-5 rounded-full bg-indigo-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5 shadow-sm">${num}</span>
+              <div class="flex-1 text-xs text-slate-700 dark:text-slate-200 leading-relaxed">${content}</div>
+            </div>
+          </div>
+        `);
+        continue;
+      }
+
+      // Bullet list item (* or -)
+      if (line.startsWith('* ') || line.startsWith('- ')) {
+        if (!inList) {
+          htmlChunks.push('<ul class="space-y-2 pl-4 my-2">');
+          inList = true;
+        }
+        const bulletContent = formatInlineMarkdown(line.slice(2));
+        htmlChunks.push(`<li class="list-disc list-outside text-slate-600 dark:text-slate-300 text-xs leading-relaxed">${bulletContent}</li>`);
+        continue;
+      }
+
+      // Standard paragraph
+      flushList();
+      htmlChunks.push(`<p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed my-1.5">${formatInlineMarkdown(line)}</p>`);
+    }
+
+    flushList();
+    flushTable();
+
+    return htmlChunks.join('\n');
+  }
+
+  function formatInlineMarkdown(str) {
+    if (!str) return '';
+    return str
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-slate-900 dark:text-white">$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em class="italic text-slate-700 dark:text-slate-300">$1</em>')
+      .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded text-[11px] font-mono bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700">$1</code>');
+  }
+
+  function copyAiAdviceToClipboard() {
+    if (!currentSummary || !currentSummary.aiAdvice || !currentSummary.aiAdvice.text) {
+      showToast('Nog geen advies gegenereerd om te kopiëren.');
+      return;
+    }
+    navigator.clipboard.writeText(currentSummary.aiAdvice.text).then(() => {
+      showToast('AI-advies gekopieerd naar klembord!');
+    }).catch(() => {
+      showToast('Kopiëren mislukt.');
+    });
   }
 
 })();
