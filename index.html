@@ -45,6 +45,7 @@
 
     <!-- Chart.js via CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css" />
 
     <style>
       ::-webkit-scrollbar {
@@ -520,6 +521,53 @@
             </div>
           </div>
 
+          <section class="mt-6 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-rose-100 dark:border-rose-900/30">
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Proactieve bottleneck-alerts</h3>
+              <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                Verstuur alleen risico's boven 75%. Deduplicatie gebeurt per dossier en knelpuntstap.
+              </p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead class="bg-slate-50 dark:bg-slate-950/60 text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                  <tr>
+                    <th class="py-3 px-4">Case ID</th>
+                    <th class="py-3 px-4">Knelpunt</th>
+                    <th class="py-3 px-4 text-right">Risico</th>
+                    <th class="py-3 px-4 text-right">Duur</th>
+                    <th class="py-3 px-4 text-right">Actie</th>
+                  </tr>
+                </thead>
+                <tbody id="predictionsTableBody" class="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tr><td colspan="5" class="py-5 px-4 text-sm text-slate-500 dark:text-slate-400">Laad een dataset om voorspellingen te zien.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-slate-200 dark:border-slate-800">
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Geregistreerde Alerts in Supabase</h3>
+              <p id="alertsAuditStatus" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Auditlog wordt geladen...</p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead class="bg-slate-50 dark:bg-slate-950/60 text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                  <tr>
+                    <th class="py-3 px-4">Tijdstip</th>
+                    <th class="py-3 px-4">Case ID</th>
+                    <th class="py-3 px-4">Knelpunt</th>
+                    <th class="py-3 px-4 text-right">Risico</th>
+                  </tr>
+                </thead>
+                <tbody id="alertsAuditBody" class="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tr><td colspan="4" class="py-5 px-4 text-sm text-slate-500 dark:text-slate-400">Nog geen geregistreerde alerts.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
           <!-- Prompt Helper Card: How to send this to AI -->
           <div class="p-5 rounded-xl bg-gradient-to-r from-indigo-50 dark:from-indigo-950/40 via-white dark:via-slate-900 to-white dark:to-slate-900 border border-indigo-200 dark:border-indigo-900/40 space-y-2 shadow-sm transition-colors">
             <div class="flex items-center space-x-2 text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase tracking-wider">
@@ -940,6 +988,8 @@
       </svg>
       <span id="toastMessage">Actie voltooid</span>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <!-- Load Native Vanilla JS Script -->
     <script src="script.js"></script>

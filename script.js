@@ -12,6 +12,10 @@
   const STORAGE_KEY_HISTORY = 'ai_bottleneck_history_v1';
   const STORAGE_KEY_THEME = 'ai_bottleneck_theme';
   const STORAGE_KEY_GEMINI_KEY = 'ai_bottleneck_gemini_key';
+  const SUPABASE_URL = 'https://wllvfqseygzflhxjcbxx.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_sgqDhrYKYToCWuNkIPy9Ig_N4YW11S9';
+  const ANALYSIS_HISTORY_TABLE = 'analysis_history';
+  const BOTTLENECK_ALERTS_TABLE = 'bottleneck_alerts';
 
   // State
   let currentSummary = null;
@@ -20,6 +24,10 @@
   let activeSearchTerm = '';
   let isGeneratingAiAdvice = false;
   let activePageId = 'pageAnalyse';
+  let supabaseClient = null;
+  let currentUser = null;
+  const verzondenAlertsSet = new Set();
+  let geregistreerdeAlerts = [];
 
   // DOM Elements - Core UI
   const dropZone = document.getElementById('dropZone');
@@ -116,6 +124,9 @@
   // Variants Table & Chart Canvas
   const variantsTableBody = document.getElementById('variantsTableBody');
   const variantsChartCanvas = document.getElementById('variantsChart');
+  const predictionsTableBody = document.getElementById('predictionsTableBody');
+  const alertsAuditBody = document.getElementById('alertsAuditBody');
+  const alertsAuditStatus = document.getElementById('alertsAuditStatus');
 
   // JSON Modal
   const jsonModal = document.getElementById('jsonModal');
@@ -126,16 +137,41 @@
   const toastMessage = document.getElementById('toastMessage');
 
   // Initialization
-  init();
+  void init();
 
-  function init() {
+  async function init() {
     initTheme();
     initApiKey();
     initPageRouting();
     setupEventListeners();
-    renderHistoryBadge();
     loadFromLocalStorage();
+    await initSupabaseAuth();
+    await haalVerzondenAlertsOp();
+    await renderHistoryBadge();
     updatePage2DatasetPreview();
+  }
+
+  async function initSupabaseAuth() {
+    try {
+      if (!window.supabase || typeof window.supabase.createClient !== 'function') return false;
+
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+      let { data, error } = await supabaseClient.auth.getSession();
+      if (error) throw error;
+
+      if (!data.session) {
+        ({ data, error } = await supabaseClient.auth.signInAnonymously());
+        if (error) throw error;
+      }
+
+      currentUser = data.session?.user || data.user || null;
+      return Boolean(currentUser);
+    } catch (error) {
+      console.warn('Supabase auth niet beschikbaar, lokale geschiedenis blijft actief:', error);
+      supabaseClient = null;
+      currentUser = null;
+      return false;
+    }
   }
 
   // ==========================================
@@ -273,6 +309,15 @@
         clearSearchBtn.classList.add('hidden');
         filterAndRenderTable();
         activitySearchInput.focus();
+      });
+    }
+
+    if (predictionsTableBody) {
+      predictionsTableBody.addEventListener('click', (event) => {
+        const button = event.target.closest('.alert-send-btn');
+        if (!button) return;
+        const candidate = getAlertCandidates()[Number(button.dataset.alertIndex)];
+        if (candidate) void verstuurAlert(button, candidate);
       });
     }
 
@@ -599,7 +644,7 @@
 
         updateProgress(90, 'Procesvarianten & doorlooptijden berekenen...', `${casesMap.size} unieke cases gevonden`);
 
-        setTimeout(() => {
+        setTimeout(async () => {
           try {
             const summary = aggregateProcessData(casesMap, totalEvents, fileName, startTime, skippedRows);
             
@@ -612,6 +657,7 @@
             // Render Dashboard
             currentSummary = summary;
             renderResults(summary);
+            await haalVerzondenAlertsOp();
 
             updateProgress(100, 'Verwerking voltooid!', `Klaar in ${summary.metadata.parseTimeMs}ms`);
             
@@ -743,6 +789,21 @@
     return NaN;
   }
 
+  function getBottleneckStep(events) {
+    if (!events || events.length < 2) return events?.[0]?.activity || 'Onbekende stap';
+
+    let largestGap = -1;
+    let bottleneckStep = events[0].activity;
+    for (let index = 1; index < events.length; index++) {
+      const gap = events[index].timestamp - events[index - 1].timestamp;
+      if (gap > largestGap) {
+        largestGap = gap;
+        bottleneckStep = events[index - 1].activity;
+      }
+    }
+    return bottleneckStep;
+  }
+
   // ==========================================
   // 4. AGGREGATION LOGIC
   // ==========================================
@@ -774,7 +835,8 @@
           totalDurationMs: 0,
           minDurationMs: Infinity,
           maxDurationMs: -Infinity,
-          sampleCaseId: caseId
+          sampleCaseId: caseId,
+          sampleBottleneckStep: getBottleneckStep(events)
         };
         variantsMap.set(pathKey, vData);
       }
@@ -807,7 +869,9 @@
         avgThroughputFormatted: formatDuration(avgDur),
         minThroughputFormatted: formatDuration(v.minDurationMs === Infinity ? 0 : v.minDurationMs),
         maxThroughputFormatted: formatDuration(v.maxDurationMs === -Infinity ? 0 : v.maxDurationMs),
-        varianceVsOverallAvg: avgThroughputMs > 0 ? Number((((avgDur - avgThroughputMs) / avgThroughputMs) * 100).toFixed(1)) : 0
+        varianceVsOverallAvg: avgThroughputMs > 0 ? Number((((avgDur - avgThroughputMs) / avgThroughputMs) * 100).toFixed(1)) : 0,
+        sampleCaseId: v.sampleCaseId,
+        sampleBottleneckStep: v.sampleBottleneckStep
       };
     });
 
@@ -831,6 +895,12 @@
         medianThroughputFormatted: formatDuration(medianThroughputMs)
       },
       top5Variants: top5
+        .map(v => ({
+          ...v,
+          riskPercentage: Math.min(99, Math.max(0, Math.round(50 + Math.max(0, v.varianceVsOverallAvg)))),
+          caseId: v.sampleCaseId,
+          bottleneckStep: v.sampleBottleneckStep || v.steps[Math.max(0, v.steps.length - 1)]
+        }))
     };
 
     const jsonString = JSON.stringify(aggregatedPayload);
@@ -1156,10 +1226,189 @@
     });
   }
 
+  async function haalVerzondenAlertsOp() {
+    verzondenAlertsSet.clear();
+    geregistreerdeAlerts = [];
+
+    if (!supabaseClient || !currentUser) {
+      renderAlertsAudit();
+      if (alertsAuditStatus) alertsAuditStatus.textContent = 'Supabase is niet beschikbaar; auditlog kan niet worden geladen.';
+      return false;
+    }
+
+    try {
+      const { data, error } = await supabaseClient
+        .from(BOTTLENECK_ALERTS_TABLE)
+        .select('case_id, knelpunt_stap, risico_percentage, huidige_duur_uren, timestamp_alert')
+        .order('timestamp_alert', { ascending: false });
+
+      if (error) throw error;
+
+      geregistreerdeAlerts = Array.isArray(data) ? data : [];
+      geregistreerdeAlerts.forEach((row) => {
+        if (row.case_id && row.knelpunt_stap) {
+          verzondenAlertsSet.add(`${row.case_id}:::${row.knelpunt_stap}`);
+        }
+      });
+
+      if (alertsAuditStatus) {
+        alertsAuditStatus.textContent = `${geregistreerdeAlerts.length} alert(s) uit Supabase geladen.`;
+      }
+      renderVoorspellingsTabel();
+      renderAlertsAudit();
+      return true;
+    } catch (error) {
+      console.warn('Supabase alerts ophalen mislukt:', error);
+      if (alertsAuditStatus) alertsAuditStatus.textContent = 'De geregistreerde alerts konden niet worden geladen.';
+      renderAlertsAudit();
+      return false;
+    }
+  }
+
+  function getAlertCandidates() {
+    const variants = currentSummary?.payload?.top5Variants || [];
+    return variants
+      .filter((variant) => variant.riskPercentage > 75 && variant.caseId && variant.bottleneckStep)
+      .map((variant) => ({
+        case_id: String(variant.caseId),
+        knelpunt_stap: String(variant.bottleneckStep),
+        risico_percentage: variant.riskPercentage,
+        huidige_duur_uren: Number((variant.avgThroughputMs / 3600000).toFixed(2))
+      }));
+  }
+
+  function renderVoorspellingsTabel() {
+    if (!predictionsTableBody) return;
+    const candidates = getAlertCandidates();
+    predictionsTableBody.innerHTML = '';
+
+    if (!candidates.length) {
+      predictionsTableBody.innerHTML = '<tr><td colspan="5" class="py-5 px-4 text-sm text-slate-500 dark:text-slate-400">Geen voorspelde risico-alerts boven 75% in deze analyse.</td></tr>';
+      return;
+    }
+
+    candidates.forEach((candidate, index) => {
+      const key = `${candidate.case_id}:::${candidate.knelpunt_stap}`;
+      const alreadySent = verzondenAlertsSet.has(key);
+      const row = document.createElement('tr');
+      row.className = 'border-b border-slate-100 dark:border-slate-800/60';
+      row.innerHTML = `
+        <td class="py-3 px-4 font-medium">${escapeHtml(candidate.case_id)}</td>
+        <td class="py-3 px-4">${escapeHtml(candidate.knelpunt_stap)}</td>
+        <td class="py-3 px-4 text-right font-semibold text-rose-600 dark:text-rose-400">${candidate.risico_percentage}%</td>
+        <td class="py-3 px-4 text-right">${candidate.huidige_duur_uren.toLocaleString('nl-NL')} uur</td>
+        <td class="py-3 px-4 text-right">
+          <button type="button" data-alert-index="${index}" class="alert-send-btn ${alreadySent ? 'btn-disabled' : ''}" ${alreadySent ? 'disabled' : ''}>
+            ${alreadySent ? '✅ Alert verzonden' : '⚠️ Verstuur Alert'}
+          </button>
+        </td>
+      `;
+      predictionsTableBody.appendChild(row);
+    });
+  }
+
+  async function verstuurAlert(button, candidate) {
+    const key = `${candidate.case_id}:::${candidate.knelpunt_stap}`;
+    if (verzondenAlertsSet.has(key)) return;
+
+    button.disabled = true;
+    button.classList.add('btn-disabled');
+    button.textContent = 'Verzenden...';
+
+    const timestamp = new Date().toISOString();
+    const payload = {
+      case_id: candidate.case_id,
+      knelpunt_stap: candidate.knelpunt_stap,
+      risico_percentage: candidate.risico_percentage,
+      huidige_duur_uren: candidate.huidige_duur_uren,
+      timestamp_alert: timestamp
+    };
+    let makeError = null;
+    let webhookConfigured = true;
+    let supabaseError = null;
+
+    try {
+      const response = await fetch('/api/send-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      let result = null;
+      try {
+        result = await response.json();
+      } catch (error) {
+        result = null;
+      }
+      if (!response.ok || !result?.success) {
+        webhookConfigured = result?.configured !== false;
+        throw new Error(result?.error || `HTTP ${response.status}`);
+      }
+    } catch (error) {
+      makeError = error;
+      console.warn('Alert via serverless Make-proxy mislukt:', error);
+    }
+
+    if (supabaseClient && currentUser) {
+      try {
+        const { data, error } = await supabaseClient
+          .from(BOTTLENECK_ALERTS_TABLE)
+          .insert(payload)
+          .select('case_id, knelpunt_stap, timestamp_alert')
+          .single();
+        if (error) throw error;
+        geregistreerdeAlerts.unshift(data || payload);
+      } catch (error) {
+        supabaseError = error;
+        console.warn('Alert opslaan in Supabase mislukt:', error);
+      }
+    } else {
+      supabaseError = new Error('Supabase is niet verbonden.');
+    }
+
+    if (!supabaseError) {
+      verzondenAlertsSet.add(key);
+      button.textContent = '✅ Alert verzonden';
+      renderAlertsAudit();
+      if (makeError) {
+        showToast(webhookConfigured
+          ? 'Alert opgeslagen; Make.com was tijdelijk niet bereikbaar.'
+          : 'Alert opgeslagen; de Make-webhook moet nog worden geconfigureerd.');
+      } else {
+        showToast('Alert verzonden en opgeslagen.');
+      }
+      return;
+    }
+
+    button.disabled = false;
+    button.classList.remove('btn-disabled');
+    button.textContent = '⚠️ Verstuur Alert';
+    showToast(makeError ? 'Make.com en Supabase konden de alert niet verwerken.' : 'Alert niet opgeslagen in Supabase. Probeer opnieuw.');
+  }
+
+  function renderAlertsAudit() {
+    if (!alertsAuditBody) return;
+    alertsAuditBody.innerHTML = '';
+    if (!geregistreerdeAlerts.length) {
+      alertsAuditBody.innerHTML = '<tr><td colspan="4" class="py-5 px-4 text-sm text-slate-500 dark:text-slate-400">Nog geen geregistreerde alerts.</td></tr>';
+      return;
+    }
+    geregistreerdeAlerts.forEach((alert) => {
+      const row = document.createElement('tr');
+      row.className = 'border-b border-slate-100 dark:border-slate-800/60';
+      row.innerHTML = `
+        <td class="py-3 px-4">${escapeHtml(new Date(alert.timestamp_alert).toLocaleString('nl-NL'))}</td>
+        <td class="py-3 px-4">${escapeHtml(alert.case_id)}</td>
+        <td class="py-3 px-4">${escapeHtml(alert.knelpunt_stap)}</td>
+        <td class="py-3 px-4 text-right">${alert.risico_percentage ?? '—'}%</td>
+      `;
+      alertsAuditBody.appendChild(row);
+    });
+  }
+
   // ==========================================
   // 8. HISTORY MANAGEMENT (saveToHistory)
   // ==========================================
-  function getHistory() {
+  function getLocalHistory() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY_HISTORY);
       if (raw) return JSON.parse(raw);
@@ -1169,40 +1418,73 @@
     return [];
   }
 
-  function saveToHistory(summary) {
-    try {
-      const history = getHistory();
-      const newEntry = {
-        id: 'hist_' + Date.now(),
-        fileName: summary.metadata.fileName,
-        analyzedDate: summary.metadata.analyzedDate,
-        totalCases: summary.payload.kpis.totalCases,
-        totalEvents: summary.payload.kpis.totalEvents,
-        uniqueVariantsCount: summary.payload.kpis.uniqueVariantsCount,
-        avgThroughputFormatted: summary.payload.kpis.avgThroughputFormatted,
-        summary: summary
-      };
+  async function getHistory() {
+    if (supabaseClient && currentUser) {
+      try {
+        const { data, error } = await supabaseClient
+          .from(ANALYSIS_HISTORY_TABLE)
+          .select('id, file_name, analyzed_date, total_cases, total_events, unique_variants_count, avg_throughput_formatted, summary')
+          .order('created_at', { ascending: false });
 
-      // Vooraan toevoegen, max 5 bewaren
-      const updated = [newEntry, ...history.filter(h => h.fileName !== summary.metadata.fileName || h.analyzedDate !== summary.metadata.analyzedDate)].slice(0, 5);
-      localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(updated));
-      renderHistoryBadge();
-    } catch (e) {
-      console.warn('Fout bij opslaan geschiedenis:', e);
+        if (error) throw error;
+
+        return data.map((item) => ({
+          id: item.id,
+          fileName: item.file_name,
+          analyzedDate: item.analyzed_date,
+          totalCases: item.total_cases,
+          totalEvents: item.total_events,
+          uniqueVariantsCount: item.unique_variants_count,
+          avgThroughputFormatted: item.avg_throughput_formatted,
+          summary: item.summary
+        }));
+      } catch (error) {
+        console.warn('Supabase geschiedenis ophalen mislukt:', error);
+      }
     }
+
+    return [];
   }
 
-  function renderHistoryBadge() {
-    const history = getHistory();
+  async function saveToHistory(summary) {
+    if (supabaseClient && currentUser) {
+      try {
+        const { error } = await supabaseClient.from(ANALYSIS_HISTORY_TABLE).insert({
+          user_id: currentUser.id,
+          file_name: summary.metadata.fileName,
+          analyzed_date: summary.metadata.analyzedDate,
+          total_cases: summary.payload.kpis.totalCases,
+          total_events: summary.payload.kpis.totalEvents,
+          unique_variants_count: summary.payload.kpis.uniqueVariantsCount,
+          avg_throughput_formatted: summary.payload.kpis.avgThroughputFormatted,
+          summary
+        });
+
+        if (!error) {
+          await renderHistoryBadge();
+          return;
+        }
+        throw error;
+      } catch (error) {
+        console.warn('Supabase geschiedenis opslaan mislukt:', error);
+        return;
+      }
+    }
+
+    console.warn('Geen Supabase-user beschikbaar; analysegeschiedenis wordt niet lokaal opgeslagen.');
+  }
+
+  async function renderHistoryBadge() {
+    const history = await getHistory();
     if (historyBadgeCount) {
       historyBadgeCount.textContent = history.length;
     }
   }
 
-  function openHistoryModal() {
+  async function openHistoryModal() {
     if (!historyModal || !historyListContainer) return;
 
-    const history = getHistory();
+    const history = await getHistory();
     historyListContainer.innerHTML = '';
 
     if (history.length === 0) {
@@ -1287,8 +1569,8 @@
     if (historyModal) historyModal.classList.add('hidden');
   }
 
-  function restoreHistoryItem(id) {
-    const history = getHistory();
+  async function restoreHistoryItem(id) {
+    const history = await getHistory();
     const item = history.find(h => h.id === id);
     if (!item) return;
 
@@ -1299,19 +1581,41 @@
     showToast(`Analyse van "${item.fileName}" hersteld!`);
   }
 
-  function deleteHistoryItem(id) {
-    let history = getHistory();
-    history = history.filter(h => h.id !== id);
-    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history));
-    renderHistoryBadge();
-    openHistoryModal(); // Refresh modal content
+  async function deleteHistoryItem(id) {
+    if (supabaseClient && currentUser) {
+      const { error } = await supabaseClient
+        .from(ANALYSIS_HISTORY_TABLE)
+        .delete()
+        .eq('id', id)
+        .eq('user_id', currentUser.id);
+
+      if (error) {
+        console.warn('Supabase geschiedenis verwijderen mislukt:', error);
+        return;
+      }
+    } else return;
+
+    await renderHistoryBadge();
+    await openHistoryModal(); // Refresh modal content
   }
 
-  function clearAllHistory() {
+  async function clearAllHistory() {
     if (!confirm('Weet je zeker dat je de gehele analyse-geschiedenis wilt wissen?')) return;
-    localStorage.removeItem(STORAGE_KEY_HISTORY);
-    renderHistoryBadge();
-    openHistoryModal();
+
+    if (supabaseClient && currentUser) {
+      const { error } = await supabaseClient
+        .from(ANALYSIS_HISTORY_TABLE)
+        .delete()
+        .eq('user_id', currentUser.id);
+
+      if (error) {
+        console.warn('Supabase geschiedenis wissen mislukt:', error);
+        return;
+      }
+    } else return;
+
+    await renderHistoryBadge();
+    await openHistoryModal();
     showToast('Geschiedenis gewist.');
   }
 
@@ -1337,6 +1641,8 @@
 
     // Render Chart.js Bar Chart
     renderChart(top5Variants);
+    renderVoorspellingsTabel();
+    renderAlertsAudit();
 
     // Active Storage Badge
     if (storageBadge && storageTime) {
